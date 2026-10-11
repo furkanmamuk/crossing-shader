@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Crossing — a shader study</title>
+  <meta name="description" content="Four magenta walkers crossing Abbey Road. The street, trees, cars and walkers are all drawn with GPU shaders.">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23151719'/%3E%3Cpath d='M5 24L16 7L27 24' stroke='%23f200b5' stroke-width='5' fill='none'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body class="cover">
+  <main>
+    <div class="scene-view"><canvas id="scene" aria-label="Four magenta figures crossing Abbey Road, with leafy trees and parked vintage cars"></canvas></div>
+    <div id="status" role="status">Preparing the scene…</div>
+    <section class="controls" aria-label="Scene controls">
+      <div class="transport"><button id="play" aria-label="Pause animation">Pause</button><button id="reset" title="Reset time and camera (R)">Reset</button><span id="clock">00:00.0</span><button id="cinema" title="Hide controls (C)">Hide controls</button></div>
+      <div class="settings">
+        <label>Speed <output id="speedValue">1.0×</output><input id="speed" aria-label="Animation speed" type="range" min="0" max="2" value="1" step="0.05"></label>
+        <label>Grain <output id="grainValue">35%</output><input id="grain" aria-label="Film grain" type="range" min="0" max="1" value="0.35" step="0.01"></label>
+        <label>Sunlight <output id="sunValue">Afternoon</output><input id="sun" aria-label="Sunlight" type="range" min="0" max="1" value="0.55" step="0.01"></label>
+        <label>Quality<select id="quality"><option value="0.65">Draft</option><option value="1" selected>Standard</option><option value="1.5">Fine</option></select></label>
+        <label>Frame<select id="framing"><option value="cover" selected>Square</option><option value="wide">Wide</option></select></label>
+      </div>
+      <footer>Drag to move the camera · Scroll to zoom · Space to play/pause · R to reset · C to hide controls</footer>
+    </section>
+    <button id="restore" aria-label="Show controls">Show controls · C</button>
+    <pre id="error" role="alert" hidden></pre>
+  </main>
+  <script type="module" src="app.js"></script>
+</body>
+</html>

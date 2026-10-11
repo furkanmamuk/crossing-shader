@@ -1,0 +1,105 @@
+name: Check and publish Crossing
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+      - name: Check JavaScript and stage the static site
+        run: |
+          node --check app.js
+          mkdir -p _site/shaders
+          cp index.html style.css app.js _site/
+          cp shaders/abbey-road.frag shaders/walkers.frag shaders/common.glsl _site/shaders/
+      - name: Install the CI browser
+        run: |
+          npm install --prefix "$RUNNER_TEMP/crossing-ci" --no-save --no-package-lock playwright@1.64.0
+          "$RUNNER_TEMP/crossing-ci/node_modules/.bin/playwright" install --with-deps chromium
+      - name: Render smoke check under a repository URL
+        run: |
+          mkdir -p "$RUNNER_TEMP/crossing-server/crossing-shader"
+          cp -R _site/. "$RUNNER_TEMP/crossing-server/crossing-shader/"
+          NODE_PATH="$RUNNER_TEMP/crossing-ci/node_modules" node <<'JS'
+          const assert = require('node:assert/strict');
+          const { spawn } = require('node:child_process');
+          const { chromium } = require('playwright');
+          const server = spawn('python3', ['-m', 'http.server', '8765', '--bind', '127.0.0.1', '--directory', process.env.RUNNER_TEMP + '/crossing-server']);
+          (async () => {
+            let browser;
+            try {
+              for (let i = 0; ; i++) {
+                try { assert.equal((await fetch('http://127.0.0.1:8765/crossing-shader/')).status, 200); break; }
+                catch (error) { if (i === 30) throw error; await new Promise(r => setTimeout(r, 100)); }
+              }
+              browser = await chromium.launch({ args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
+              const page = await browser.newPage({ viewport: { width: 640, height: 800 }, reducedMotion: 'reduce' });
+              const errors = [];
+              page.on('pageerror', error => errors.push(error.message));
+              page.on('console', message => { if (message.type() === 'error') errors.push(message.text()); });
+              await page.goto('http://127.0.0.1:8765/crossing-shader/');
+              await page.waitForFunction(() => window.crossing?.diagnostics().ready, null, { timeout: 60000 });
+              const result = await page.evaluate(() => {
+                const app = crossing, canvas = document.getElementById('scene'), gl = canvas.getContext('webgl2');
+                app.state.grain = 0;
+                function sample(time) {
+                  app.renderAt(time);
+                  const pixels = new Uint8Array(canvas.width * canvas.height * 4), columns = new Uint32Array(canvas.width);
+                  gl.readPixels(0, 0, canvas.width, canvas.height, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+                  let hash = 2166136261, magenta = 0, figures = 0, inside = false;
+                  for (let i = 0; i < pixels.length; i += 4) {
+                    for (let c = 0; c < 3; c++) hash = Math.imul(hash ^ pixels[i + c], 16777619);
+                    if (pixels[i] > 130 && pixels[i + 1] < 45 && pixels[i + 2] > 80) { magenta++; columns[(i / 4) % canvas.width]++; }
+                  }
+                  for (const count of columns) { const occupied = count > canvas.height * .015; if (occupied && !inside) figures++; inside = occupied; }
+                  return { hash: hash >>> 0, magenta, figures };
+                }
+                const initial = sample(0), repeat = sample(0), animated = sample(.45), diagnostics = app.diagnostics();
+                return { initial, repeat, animated, diagnostics, glError: gl.getError(), square: canvas.width === canvas.height };
+              });
+              assert(result.diagnostics.ready && result.diagnostics.linked);
+              assert.equal(result.glError, 0);
+              assert.equal(result.diagnostics.error, 0);
+              assert(result.square && result.initial.magenta > 10000);
+              assert.equal(result.initial.figures, 4);
+              assert.equal(result.initial.hash, result.repeat.hash);
+              assert.notEqual(result.initial.hash, result.animated.hash);
+              assert.deepEqual(errors, []);
+              console.log(JSON.stringify(result, null, 2));
+            } finally { if (browser) await browser.close(); server.kill(); }
+          })().catch(error => { console.error(error); process.exitCode = 1; });
+          JS
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: _site
+
+  deploy:
+    needs: check
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/configure-pages@v5
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@v4
